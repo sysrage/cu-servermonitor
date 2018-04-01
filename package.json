@@ -1,0 +1,37 @@
+{
+  "name": "cu-servermonitor",
+  "version": "1.0.0",
+  "description": "Script to monitor Camelot Unchained server status and send out notifications.",
+  "keywords": [
+    "game",
+    "Node.js",
+    "application",
+    "openshift"
+  ],
+  "author": {
+    "name": "Brian Bothwell",
+    "email": "sysrage@gmail.com",
+    "url": "http://www.sysrage.net/"
+  },
+  "homepage": "https://github.com/sysrage/cu-servermonitor",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sysrage/cu-servermonitor"
+  },
+  "engines": {
+    "node": ">= 0.6.0",
+    "npm": ">= 1.0.0"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.1.47",
+    "express": "~3.4.4",
+    "isomorphic-fetch": "^2.2.1",
+    "moment": "^2.10.6",
+    "node-pushover": "^0.2.2",
+    "request": "^2.58.0"
+  },
+  "devDependencies": {},
+  "bundleDependencies": [],
+  "private": true,
+  "main": "server.js"
+}
