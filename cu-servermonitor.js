@@ -17,16 +17,6 @@ Optional:
  - node-applescript - Needed to send iMessage notifications. Requires OSX.
  - aws-sdk - Needed to send push notifications (SMS/email/etc.) via AWS SNS.
 
-Server Access Levels:
-  Invalid = -1,
-  Public = 0,
-  Beta3 = 1,
-  Beta2 = 2,
-  Beta1 = 3,
-  Alpha = 4,
-  IT = 5, // called InternalTest in API
-  Devs = 6, // called Employees in API
-
 Server Status Levels:
   Offline = 0
   Online = 2
@@ -54,7 +44,18 @@ function getExistingServer(servername) {
     return false;
 }
 
-// function to query CU GraphQL data
+// function to read saved server data
+function getSavedServers() {
+    try {
+        // *** add checking for valid JSON
+        return JSON.parse(fs.readFileSync(config.serverDataFile));
+    } catch(error) {
+        util.log("[STATUS] Could not read server data file.");
+        return [];
+    }
+}
+
+// function to query CU GraphQL data - mostly taken from CU client source
 function gql(query, variables) {
     var url = 'http://api.camelotunchained.com/graphql';
     var headers = {
@@ -77,37 +78,33 @@ function gql(query, variables) {
         })
         .catch((reason) => {
             console.error(reason.message);
-            reject({ reason: 'API server unavailable.' });
+            reject({ reason: 'API server unavailable' });
         });
     });
 }
 
-// function to get CUBE count
-function getCUBECount(callback) {
-    var url = "http://camelotunchained.com/v2/c-u-b-e/";
-    request(url, function(error, response, body) {
-        if (!error) {
-            var re = /<h2 id="cube_count_number">([0-9,]+)<\/h2>/ig;
-            var cubeCount = re.exec(body);
-            if (cubeCount !== null) {
-                callback(cubeCount[1]);
-            } else {
-                callback("Unknown");
-            }
-        }
-    });
-}
+// function to compare access levels
+function hasAccess(userLevel, serverLevel) {
+    if (userLevel === serverLevel) return true;
 
-// function to read the saved server data
-function getSavedServers() {
-    fs.readFile(config.serverDataFile, function(err, data) {
-        if (err && err.code === 'ENOENT') {
-            util.log("[STATUS] Server data file did not exist.");
-            return;
-        } else {
-            return JSON.parse(data);
-        }
-    });
+    var accessLevels = {
+        'Invalid': -1,
+        'Public': 0,
+        'Beta3': 1,
+        'Beta2': 2,
+        'Beta1': 3,
+        'Alpha': 4,
+        'InternalTest': 5,
+        'Employees': 6
+    };
+
+    if (typeof accessLevels[userLevel] === 'undefined') userLevel = 'Invalid';
+    if (typeof accessLevels[serverLevel] === 'undefined') {
+        util.log("[ERROR] Server has unexpected access level (" + serverLevel + ").");
+        serverLevel = 'Employees';
+    }
+    if (accessLevels[userLevel] > accessLevels[serverLevel]) return true;
+    return false;
 }
 
 // function to send iMessage notification
@@ -235,14 +232,17 @@ function checkServerStatus() {
             } else {
                 // Server does not exist in data file
                 var currentDate = new Date();
-                // *** mess with hatchery to force an update!
-                if (serverEntry.name === 'Hatchery') serverEntry.status = 69;
                 servers.push({
                     name: serverEntry.name,
                     status: serverEntry.status,
                     accessLevel: serverEntry.accessLevel,
                     playerMaximum: serverEntry.playerMaximum,
                     apiHost: serverEntry.apiHost,
+                    itAccess: (hasAccess('InternalTest', serverEntry.accessLevel) && serverEntry.status === 'Online' && serverEntry.playerMaximum > 0),
+                    alphaAccess: (hasAccess('Alpha', serverEntry.accessLevel) && serverEntry.status === 'Online' && serverEntry.playerMaximum > 0),
+                    beta1Access: (hasAccess('Beta1', serverEntry.accessLevel) && serverEntry.status === 'Online' && serverEntry.playerMaximum > 0),
+                    beta2Access: (hasAccess('Beta2', serverEntry.accessLevel) && serverEntry.status === 'Online' && serverEntry.playerMaximum > 0),
+                    beta3Access: (hasAccess('Beta3', serverEntry.accessLevel) && serverEntry.status === 'Online' && serverEntry.playerMaximum > 0),
                     lastUpdate: currentDate,
                     lastNotice: currentDate
                 });
@@ -251,198 +251,110 @@ function checkServerStatus() {
             }
         }
     }, function(error) {
-        util.log("[ERROR] Poll of server data failed.");
+        util.log("[ERROR] Polling of server data failed.");
     });
 };
 
-var timerNotifications = function() { checkNotifications(); return setInterval(function() { checkNotifications(); }, 1000); };
+var timerNotifications = function() { return setInterval(function() { checkNotifications(); }, 1000); };
 function checkNotifications() {
     for (i = 0; i < servers.length; i++) {
-        // Change this to be if last notice was *before* last update
-        if (servers[i].lastUpdate !== servers[i].lastNotice) {
-            console.log('server has been updated: ' + servers[i].name);
-        }
-    }
-    util.log('notification check');
-};
-
-var timerServerOnline = function(server) { return setInterval(function() { checkServerOnline(server); }, 60000); };
-function checkServerOnline(server) {
-    var epochTime = Math.floor((new Date).getTime() / 1000);
-
-    server.cuRest.getServers().then(function(data) {
-        var currentOnline = false;
-        var currentAccess = 6;
-        var statusChange = false;
-        for (var j = 0; j < data.length; j++) {
-            var serverEntry = data[j];
-            console.log('***');
-            console.dir(serverEntry);
-            if (serverEntry.name.toLowerCase() === server.name.toLowerCase()) {
-                if (serverEntry.status === 2) currentOnline = true;
-                currentAccess = serverEntry.accessLevel;
-
-
-                if (! onlineStats[server.name].online && currentOnline) {
-                    // Server was offline, is now online.
-                    statusChange = true;
-                    for (var i = 5; i > currentAccess - 1; i--) {
-                        switch(i) {
-                            case 5:
-                                // Server now open to IT -- Send notice to IT
-                                sendToIT("The server '" + server.name + "' is now online and allowing access to IT players.");
-                                util.log("[GAME] Server access status message sent to users. (IT)");
-                                break;
-                            case 4:
-                                // Server now open to Alpha -- Send notice to Alpha
-                                sendToAlpha("The server '" + server.name + "' is now online and allowing access to Alpha players.");
-                                util.log("[GAME] Server access status message sent to users. (Alpha)");
-                                break;
-                            case 3:
-                                // Server now open to Beta1 -- Send notice to Beta1
-                                sendToBeta1("The server '" + server.name + "' is now online and allowing access to Beta1 players.");
-                                util.log("[GAME] Server access status message sent to users. (Beta1)");
-                                break;
-                            case 2:
-                                // Server now open to Beta2 -- Send notice to Beta2
-                                sendToBeta2("The server '" + server.name + "' is now online and allowing access to Beta2 players.");
-                                util.log("[GAME] Server access status message sent to users. (Beta2)");
-                                break;
-                            case 1:
-                                // Server now open to Beta3 -- Send notice to Beta3
-                                sendToBeta3("The server '" + server.name + "' is now online and allowing access to Beta3 players.");
-                                util.log("[GAME] Server access status message sent to users. (Beta3)");
-                                break;
-                        }
+        if (servers[i].lastUpdate > servers[i].lastNotice) {
+            util.log("[STATUS] Server status updated (" + servers[i].name + ").");
+            if (servers[i].status === 'Online' && servers[i].playerMaximum > 0) {
+                if (hasAccess('InternalTest', servers[i].accessLevel)) {
+                    if (!servers[i].itAccess) {
+                        servers[i].itAccess = true;
+                        console.log('IT just gained access.');
                     }
                 } else {
-                    if (onlineStats[server.name].accessLevel < currentAccess) {
-                        // Server was online but access level has gone up
-                        statusChange = true;
-                        for (var i = onlineStats[server.name].accessLevel; i < currentAccess; i++) {
-                            switch(i) {
-                                case 5:
-                                    // Server no longer open to IT -- Send notice to IT
-                                    sendToIT("The server '" + server.name + "' is no longer allowing access to IT players.");
-                                    util.log("[GAME] Server access status message sent to users. (IT)");
-                                    break;
-                                case 4:
-                                    // Server no longer open to Alpha -- Send notice to Alpha
-                                    sendToAlpha("The server '" + server.name + "' is no longer allowing access to Alpha players.");
-                                    util.log("[GAME] Server access status message sent to users. (Alpha)");
-                                    break;
-                                case 3:
-                                    // Server no longer open to Beta1 -- Send notice to Beta1
-                                    sendToBeta1("The server '" + server.name + "' is no longer allowing access to Beta1 players.");
-                                    util.log("[GAME] Server access status message sent to users. (Beta1)");
-                                    break;
-                                case 2:
-                                    // Server no longer open to Beta2 -- Send notice to Beta2
-                                    sendToBeta2("The server '" + server.name + "' is no longer allowing access to Beta2 players.");
-                                    util.log("[GAME] Server access status message sent to users. (Beta2)");
-                                    break;
-                                case 1:
-                                    // Server no longer open to Beta3 -- Send notice to Beta3
-                                    sendToBeta3("The server '" + server.name + "' is no longer allowing access to Beta3 players.");
-                                    util.log("[GAME] Server access status message sent to users. (Beta3)");
-                                    break;
-                            }
-                        }
-                    } else if (onlineStats[server.name].accessLevel > currentAccess) {
-                        // Server was online but access level has gone down
-                        statusChange = true;
-                        for (var i = onlineStats[server.name].accessLevel - 1; i > currentAccess - 1; i--) {
-                            switch(i) {
-                                case 5:
-                                    // Server now open to IT -- Send notice to IT
-                                    sendToIT("The server '" + server.name + "' is now allowing access to IT players.");
-                                    util.log("[GAME] Server access status message sent to users. (IT)");
-                                    break;
-                                case 4:
-                                    // Server now open to Alpha -- Send notice to Alpha
-                                    sendToAlpha("The server '" + server.name + "' is now allowing access to Alpha players.");
-                                    util.log("[GAME] Server access status message sent to users. (Alpha)");
-                                    break;
-                                case 3:
-                                    // Server now open to Beta1 -- Send notice to Beta1
-                                    sendToBeta1("The server '" + server.name + "' is now allowing access to Beta1 players.");
-                                    util.log("[GAME] Server access status message sent to users. (Beta1)");
-                                    break;
-                                case 2:
-                                    // Server now open to Beta2 -- Send notice to Beta2
-                                    sendToBeta2("The server '" + server.name + "' is now allowing access to Beta2 players.");
-                                    util.log("[GAME] Server access status message sent to users. (Beta2)");
-                                    break;
-                                case 1:
-                                    // Server now open to Beta3 -- Send notice to Beta3
-                                    sendToBeta3("The server '" + server.name + "' is now allowing access to Beta3 players.");
-                                    util.log("[GAME] Server access status message sent to users. (Beta3)");
-                                    break;
-                            }
-                        }
+                    if (servers[i].itAccess) {
+                        servers[i].itAccess = false;
+                        console.log('IT just lost access.');
                     }
                 }
-                break;
+                if (hasAccess('Alpha', servers[i].accessLevel)) {
+                    if (!servers[i].alphaAccess) {
+                        servers[i].alphaAccess = true;
+                        console.log('Alpha just gained access.');
+                    }
+                } else {
+                    if (servers[i].alphaAccess) {
+                        servers[i].alphaAccess = false;
+                        console.log('Alpha just lost access.');
+                    }
+                }
+                if (hasAccess('Beta1', servers[i].accessLevel)) {
+                    if (!servers[i].beta1Access) {
+                        servers[i].beta1Access = true;
+                        console.log('Beta1 just gained access.');
+                    }
+                } else {
+                    if (servers[i].beta1Access) {
+                        servers[i].beta1Access = false;
+                        console.log('Beta1 just lost access.');
+                    }
+                }
+                if (hasAccess('Beta2', servers[i].accessLevel)) {
+                    if (!servers[i].beta2Access) {
+                        servers[i].beta2Access = true;
+                        console.log('Beta2 just gained access.');
+                    }
+                } else {
+                    if (servers[i].beta2Access) {
+                        servers[i].beta2Access = false;
+                        console.log('Beta2 just lost access.');
+                    }
+                }
+                if (hasAccess('Beta3', servers[i].accessLevel)) {
+                    if (!servers[i].beta3Access) {
+                        servers[i].beta3Access = true;
+                        console.log('Beta3 just gained access.');
+                    }
+                } else {
+                    if (servers[i].beta3Access) {
+                        servers[i].beta3Access = false;
+                        console.log('Beta3 just lost access.');
+                    }
+                }
+            } else if (servers[i].status === 'Offline' || servers[i].playerMaximum < 1){
+                if (servers[i].itAccess) {
+                    servers[i].itAccess = false;
+                    console.log('IT just lost access.');
             }
-        }
-
-        if (onlineStats[server.name].online && ! currentOnline) {
-            // Server was online, is now offline.
-            statusChange = true;
-            for (var i = 5; i > onlineStats[server.name].accessLevel - 1; i--) {
-                switch(i) {
-                    case 5:
-                        // Server now open to IT -- Send notice to IT
-                        sendToIT("The server '" + server.name + "' is now offline.");
-                        util.log("[GAME] Server access status message sent to users. (IT)");
-                        break;
-                    case 4:
-                        // Server now open to Alpha -- Send notice to Alpha
-                        sendToAlpha("The server '" + server.name + "' is now offline.");
-                        util.log("[GAME] Server access status message sent to users. (Alpha)");
-                        break;
-                    case 3:
-                        // Server now open to Beta1 -- Send notice to Beta1
-                        sendToBeta1("The server '" + server.name + "' is now offline.");
-                        util.log("[GAME] Server access status message sent to users. (Beta1)");
-                        break;
-                    case 2:
-                        // Server now open to Beta2 -- Send notice to Beta2
-                        sendToBeta2("The server '" + server.name + "' is now offline.");
-                        util.log("[GAME] Server access status message sent to users. (Beta2)");
-                        break;
-                    case 1:
-                        // Server now open to Beta3 -- Send notice to Beta3
-                        sendToBeta3("The server '" + server.name + "' is now offline.");
-                        util.log("[GAME] Server access status message sent to users. (Beta3)");
-                        break;
+                if (servers[i].alphaAccess) {
+                    servers[i].alphaAccess = false;
+                    console.log('Alpha just lost access.');
+            }
+                if (servers[i].beta1Access) {
+                    servers[i].beta1Access = false;
+                    console.log('Beta1 just lost access.');
+            }
+                if (servers[i].beta2Access) {
+                    servers[i].beta2Access = false;
+                    console.log('Beta2 just lost access.');
+            }
+                if (servers[i].beta3Access) {
+                    servers[i].beta3Access = false;
+                    console.log('Beta3 just lost access.');
                 }
             }
-        }
 
-        if (statusChange) {
-            onlineStats[server.name].online = currentOnline;
-            onlineStats[server.name].accessLevel = currentAccess;
-            onlineStats[server.name].lastNotice = epochTime;
-
-            fs.writeFile(server.onlineFile, JSON.stringify(onlineStats[server.name]), function(err) {
+            // Set last notification timestamp and write servers to file
+            servers[i].lastNotice = new Date();
+            fs.writeFile(config.serverDataFile, JSON.stringify(servers), function(err) {
                 if (err) {
-                    return util.log("[ERROR] Unable to write server access status stats file (" + server.name + ").");
+                    return util.log("[ERROR] Unable to write server data file (" + config.serverDataFile + ").");
                 }
-                util.log("[STATUS] Server access status stats file saved (" + server.name + ").");
+                util.log("[STATUS] Server data file saved (" + config.serverDataFile + ").");
             });
         }
-    }, function(error) {
-        util.log("[ERROR] Poll of server data failed.");
-    });
-}
+    }
+};
 
 /*****************************************************************************/
 /*****************************************************************************/
 
 // Initial startup
 var servers = getSavedServers();
-if (typeof servers !== 'Array') servers = [];
-
 var serverStatusTimer = timerServerStatus();
 var notificationTimer = timerNotifications();

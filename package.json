@@ -33,5 +33,5 @@
   "devDependencies": {},
   "bundleDependencies": [],
   "private": true,
-  "main": "server.js"
+  "main": "cu-servermonitor.js"
 }
