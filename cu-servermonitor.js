@@ -142,7 +142,12 @@ function sendSMS(phone, message) {
 // function to send AWS SNS notification
 function sendSNS(arn, message, subject) {
     var AWS = require('aws-sdk');
-    AWS.config.region = 'us-east-1';
+    AWS.config.update({
+        accessKeyId: config.snsAccessID,
+        secretAccessKey: config.snsSecretKey,
+        region: config.snsRegion
+    });
+    // AWS.config.region = 'us-east-1';
     var sns = new AWS.SNS();
 
     var params = {
