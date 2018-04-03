@@ -44,9 +44,16 @@ function getExistingServer(servername) {
 
 // function to read saved server data
 function getSavedServers() {
+    function reviver(key, value) {
+        if ((key === "lastUpdate" || key === "lastNotice") && typeof value === "string" && dateFormat.test(value)) {
+            return new Date(value);
+        }
+        return value;
+    }
+
     try {
         // *** add checking for valid JSON
-        return JSON.parse(fs.readFileSync(config.serverDataFile));
+        return JSON.parse(fs.readFileSync(config.serverDataFile), reviver);
     } catch(error) {
         util.log("[STATUS] Could not read server data file.");
         return [];
