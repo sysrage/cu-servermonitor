@@ -30,6 +30,9 @@
     "node-pushover": "^0.2.2",
     "request": "^2.58.0"
   },
+  "scripts": {
+    "start": "node cu-servermonitor.js"
+  },
   "devDependencies": {},
   "bundleDependencies": [],
   "private": true,
