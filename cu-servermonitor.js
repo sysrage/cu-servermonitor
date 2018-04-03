@@ -45,7 +45,7 @@ function getExistingServer(servername) {
 // function to read saved server data
 function getSavedServers() {
     function reviver(key, value) {
-        if ((key === "lastUpdate" || key === "lastNotice") && typeof value === "string" && dateFormat.test(value)) {
+        if ((key === "lastUpdate" || key === "lastNotice") && typeof value === "string" ) {
             return new Date(value);
         }
         return value;
@@ -210,11 +210,9 @@ function sendToBeta3(message) {
 
 // function to send a server notification to IT players
 function sendToIT(message) {
-    console.log('sendtoit-po');
     config.poITNotices.forEach(function(poID) {
         sendPushover(poID, "[CU]", message);
     });
-    console.log('sendtoit-sns');
     config.snsITNotices.forEach(function(arn) {
         sendSNS(arn, message, message);
     });
@@ -223,7 +221,6 @@ function sendToIT(message) {
 // Timer to monitor server status via API
 var timerServerStatus = function() { checkServerStatus(); return setInterval(function() { checkServerStatus(); }, 10000); };
 function checkServerStatus() {
-    console.dir(servers);
     gql('{ connectedServices { servers { name status accessLevel playerMaximum apiHost } } }').then(function(data) {
         data = data.connectedServices.servers;
         for (var i = 0; i < data.length; i++) {
