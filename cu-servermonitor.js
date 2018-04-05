@@ -1,24 +1,24 @@
-/* Camelot Unchained server status monitor
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ */
+
+ /* Camelot Unchained server status monitor
 
 To use, run `node cu-servermonitor.js`
 
 Requires:
  - isomorphic-fetch
- - request --
- - bluebird*
- - Camelot Unchained account
+ - es6-promise*
 
-* The bluebird module is only required when using older versions of Node.js
+* The es6-promise module is only required when using older versions of Node.js
 which don't have Promise support.
 
-Optional:
+Optional (at least one is required):
  - node-pushover - Needed to send Pushover notifications.
  - node-applescript - Needed to send iMessage notifications. Requires OSX.
  - aws-sdk - Needed to send push notifications (SMS/email/etc.) via AWS SNS.
-
-Server Status Levels:
-  Offline = 0
-  Online = 2
 
 */
 
@@ -27,9 +27,10 @@ var config = require('./cu-servermonitor.cfg');
 var util = require('util');
 var fs = require('fs');
 var fetch = require('isomorphic-fetch');
-var request = require('request');
 
-if (typeof Promise === 'undefined') Promise = require('bluebird');
+// When using older versions of Node.js without Promise support,
+// use the es6-promise polyfill
+if (typeof Promise === 'undefined') require('es6-promise').polyfill();
 
 /*****************************************************************************/
 /*****************************************************************************/
@@ -52,7 +53,6 @@ function getSavedServers() {
     }
 
     try {
-        // *** add checking for valid JSON
         return JSON.parse(fs.readFileSync(config.serverDataFile), reviver);
     } catch(error) {
         util.log("[STATUS] Could not read server data file.");
@@ -129,23 +129,6 @@ function sendPushover(user, title, message) {
     push.send(user, title, message);
 }
 
-// function to send SMS notification
-function sendSMS(phone, message) {
-    var url = "http://textbelt.com/text?number=" + phone + "&message=" + message;
-    var req = {
-        headers: {'content-type' : 'application/x-www-form-urlencoded'},
-        url: 'http://textbelt.com/text',
-        body: 'number=' + phone + '&message=' + message
-    };
-    request.post(req, function (error, response, body) {
-        if (!error && response.statusCode == 200) {
-            if (! JSON.parse(body).success) {
-                util.log("[ERROR] Error sending SMS: " + JSON.parse(body).message);
-            }
-        }
-    });
-}
-
 // function to send AWS SNS notification
 function sendSNS(arn, message, subject) {
     var AWS = require('aws-sdk');
@@ -165,6 +148,16 @@ function sendSNS(arn, message, subject) {
 
     sns.publish(params, function(err, data) {
         if (err) util.log("[ERROR] Error sending SNS: " + err);
+    });
+}
+
+// function to send a server notification to script administrators
+function sendToAdmin(message) {
+    config.poAdminNotices.forEach(function(poID) {
+        sendPushover(poID, "[CU]", message);
+    });
+    config.snsAdminNotices.forEach(function(arn) {
+        sendSNS(arn, message, message);
     });
 }
 
@@ -256,8 +249,8 @@ function checkServerStatus() {
                     lastUpdate: currentDate,
                     lastNotice: currentDate
                 });
+                sendToAdmin("New server added to tracking list (" + serverEntry.name + ").");
                 util.log("[STATUS] New server added to tracking list (" + serverEntry.name + ").");
-                // *** send notice to admins!!
             }
         }
     }, function(error) {
