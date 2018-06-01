@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "aws-sdk": "^2.1.47",
-    "express": "~3.4.4",
+    "express": "^4.16.3",
     "isomorphic-fetch": "^2.2.1",
     "node-pushover": "^0.2.2"
   },

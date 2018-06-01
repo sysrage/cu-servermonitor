@@ -1,0 +1,15 @@
+{
+  "short_name": "CU Status",
+  "name": "Camelot Unchained Server Status",
+  "icons": [
+    {
+      "src": "/favicon.jpg",
+      "type": "image/jpeg",
+      "sizes": "72x72"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0C2033",
+  "display": "fullscreen",
+  "theme_color": "#0C2033"
+}
