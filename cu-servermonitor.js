@@ -22,7 +22,7 @@ Optional (at least one is required):
 
 */
 
-var webserver = require('child_process').fork(__dirname + '/server.js');
+// var webserver = require('child_process').fork(__dirname + '/server.js');
 
 var config = require('./cu-servermonitor.cfg');
 
